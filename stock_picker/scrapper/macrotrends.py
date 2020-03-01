@@ -80,7 +80,7 @@ class MacrotrendsScrapper:
         if not list_by_industry_table:
             raise ParsingError("Could not find table `Stocks by Industry` in the research page")
         list_by_industry_table = list_by_industry_table[0]
-        industry_cells = list_by_industry_table.find_all('td', attrs = {'style': 'text-align:left'})
+        industry_cells = list_by_industry_table.find_all('td', attrs={'style': 'text-align:left'})
         if not industry_cells:
             raise ParsingError("Could not find any industry cell in the `Stock by Industry` table")
         industry_listing_urls = {}
@@ -205,7 +205,9 @@ class MacrotrendsScrapper:
                 except ValueError:
                     cell_data = cell_element.string
                 price_data[price_table_headers[idx]].append(cell_data)
-        stock_data = {'price' :price_data}
+        price_data['years'] = price_data['year']
+        price_data.pop('year', None)
+        stock_data = {'price': price_data}
         try:
             profile_table_headers = [th.string for th in profile_table_element.find_all('th')]
         except Exception as e:
