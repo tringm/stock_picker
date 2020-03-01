@@ -93,10 +93,10 @@ class MacrotrendsScrapper:
         _l.debug(f"Found following industry listing: {', '.join(industry_listing_urls.keys())}")
         return industry_listing_urls
 
-    def fetch_stocks_url_from_industry_listing(self, industry_listing_page_url: str) -> Dict:
-        """Find stocks in an industry urls by scrapping listing of stock by industry page
+    def fetch_stocks_url_and_profile_in_industry(self, industry_listing_page_url: str) -> Dict:
+        """Find stocks url and profile in an industry by scrapping listing of stock by industry page
 
-        :return: Dictionary of stocks ticker and their corresponding urls
+        :return: Dictionary of stocks ticker and their profile and urls
         """
         _l = self.logger
         _l.info(f'Fetching content from industry listing {industry_listing_page_url}')
@@ -112,33 +112,45 @@ class MacrotrendsScrapper:
         except Exception as e:
             _l.debug(f'Table content: {stocks_data_table_string}')
             raise ParsingError(f'Failed to parse stocks data table: {e}')
-        industry_stocks_url = {}
+        stocks_data = {}
         for stock_datum in stocks_data_table:
             try:
                 stock_ticker = stock_datum['ticker']
+                stocks_data[stock_ticker] = {
+                    'profile': {
+                        'country': stock_datum['country_code'],
+                        'market_cap': stock_datum['market_val'],
+                        'company_name': stock_datum['comp_name'],
+                        'displayable_company_name': stock_datum['comp_name_2'],
+                        'dividend_yield': stock_datum['div_yield'],
+                        'held_by_insiders_pct': stock_datum['held_by_insiders_pct'],
+                        'held_by_institutions_pct': stock_datum['held_by_institutions_pct'],
+                        'url': f"{self.prefix_url}/stocks/charts/{stock_ticker}/{stock_datum['comp_name']}"
+                    }
+                }
             except Exception as e:
-                _l.error(f'Stock ticker not found {e} in {stock_datum}')
+                _l.error(f'Failed to parse profile: {e} in {stock_datum}')
                 continue
             try:
-                stock_url = self.soupify(stock_datum['link'], 'html.parser').a['href'].replace('stock-price-history', '')
+                stocks_data[stock_ticker]['profile']['backup_url'] = \
+                    self.soupify(stock_datum['link'], 'html.parser').a['href'].replace('/stock-price-history', '')
             except Exception as e:
-                _l.error(f'Failed to parse stock link: {e} in {stock_datum}')
-                continue
-            _l.debug(f'Found ticker `{stock_ticker}` with url: {stock_url}')
-            industry_stocks_url[stock_ticker] = stock_url
-        _l.info(f'Found {len(industry_stocks_url)} stocks url in this industry')
-        return industry_stocks_url
+                _l.error(f"Failed to parse back up url: {e} in {stock_datum['link']}")
+            _l.debug(f'Parsed ticker `{stock_ticker}`')
+        _l.info(f'Found {len(stocks_data)} stocks url and profile in this industry')
+        return stocks_data
 
-    def fetch_stock_financial_data(self, financial_data_page_url: str):
-        """Fetch a stock financial data from url.
-        This has to be done separately for each financial aspect under Financials tab in the website
+    def fetch_stock_financial_aspect_data(self, financial_aspect: str, stock_url: str):
+        """Fetch a finanicla aspect data of a stock
 
-        :param financial_data_page_url:
+        :param financial_aspect:
+        :param stock_url:
         :return:
         """
         _l = self.logger
-        _l.info(f"Start fetching financial data from {financial_data_page_url}")
-        res = self.fetch(financial_data_page_url)
+        financial_aspect_page_url = f'{stock_url}/{financial_aspect}'
+        _l.info(f"Start fetching {financial_aspect} data from {financial_aspect_page_url}")
+        res = self.fetch(financial_aspect_page_url)
         soup = self.soupify(res.content, 'html.parser')
         data_script = soup.find('script', string=re.compile('var originalData'))
         if not data_script:
@@ -166,13 +178,14 @@ class MacrotrendsScrapper:
                 raise ParsingError(f'Failed to parse field {field_name} data: {e}')
         return stock_data
 
-    def fetch_stock_price_data_and_profile_data(self, stock_price_page_url: str) -> (Dict, Dict):
+    def fetch_stock_price_data_and_profile_data(self, stock_url: str) -> (Dict, Dict):
         """Fetch stock historical price data
 
-        :param stock_price_page_url:
+        :param stock_url:
         :return: stock price data and stock profile data
         """
         _l = self.logger
+        stock_price_page_url = f'{stock_url}/stock-price-history'
         _l.info(f'Start fetching price data from {stock_price_page_url}')
         res = self.fetch(stock_price_page_url)
         soup = self.soupify(res.content, 'html.parser')
@@ -199,22 +212,22 @@ class MacrotrendsScrapper:
             profile_table_headers = [th.string for th in profile_table_element.find_all('th')]
         except Exception as e:
             raise ParsingError(f'Failed to parse info table header: {e}')
-        profile_Data = {}
+        profile_data = {}
         profile_table_data_elements = [td for td in profile_table_element.find_all('td') if 'colspan' not in td.attrs]
         try:
-            profile_Data['sector'] = profile_table_data_elements[profile_table_headers.index('Sector')].string
+            profile_data['sector'] = profile_table_data_elements[profile_table_headers.index('Sector')].string
         except Exception as e:
             raise ParsingError(f'Failed to parse Sector: {e}')
         try:
-            profile_Data['industry'] = profile_table_data_elements[profile_table_headers.index('Industry')].string
+            profile_data['industry'] = profile_table_data_elements[profile_table_headers.index('Industry')].string
         except Exception as e:
             raise ParsingError(f'Failed to parse Industry: {e}')
         try:
-            profile_Data['info'] = profile_table_element.find('td', attrs={'colspan': 4}).span.string
+            profile_data['description'] = profile_table_element.find('td', attrs={'colspan': 4}).span.string
         except Exception as e:
             raise ParsingError(f'Failed to parse generic info: {e}')
 
-        return price_data, profile_Data
+        return price_data, profile_data
 
     def fetch_stock_data(self, stock_url: str):
         """Fetch stock data from its url
@@ -225,8 +238,6 @@ class MacrotrendsScrapper:
         _l = self.logger
         stock_data = {}
         for fin_aspect in self.financial_aspects:
-            stock_data[self.beautify_field(fin_aspect)] = self.fetch_stock_financial_data(
-                stock_url + fin_aspect)
-        stock_data['price'], stock_data['profile'] = self.fetch_stock_price_data_and_profile_data(
-            stock_url + 'stock-price-history')
+            stock_data[self.beautify_field(fin_aspect)] = self.fetch_stock_financial_aspect_data(fin_aspect, stock_url)
+        stock_data['price'], stock_data['profile'] = self.fetch_stock_price_data_and_profile_data(stock_url)
         return stock_data
