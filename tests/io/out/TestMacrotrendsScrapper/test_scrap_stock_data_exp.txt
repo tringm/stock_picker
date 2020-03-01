@@ -904,6 +904,7 @@
       "2005-12-31"
     ]
   },
+  "description": "Berkshire Hathaway is a holding company for a multitude of businesses, run by its famous Chairman and CEO, Mr. Warren Buffett. Berkshire Hathaway is headquartered in Omaha, Nebraska and began as a group of textile milling plants.",
   "income_statement": {
     "basic_eps": [
       33.1968,
@@ -1297,6 +1298,7 @@
       "2005-12-31"
     ]
   },
+  "industry": "Property, Casualty and Title Insurance",
   "price": {
     "annual_change": [
       "-8.90%",
@@ -1481,9 +1483,5 @@
       21.94
     ]
   },
-  "profile": {
-    "description": "Berkshire Hathaway is a holding company for a multitude of businesses, run by its famous Chairman and CEO, Mr. Warren Buffett. Berkshire Hathaway is headquartered in Omaha, Nebraska and began as a group of textile milling plants.",
-    "industry": "Property, Casualty and Title Insurance",
-    "sector": "Finance"
-  }
+  "sector": "Finance"
 }
