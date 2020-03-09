@@ -20,7 +20,12 @@ class TestMacrotrendsScrapper(TestCaseCompare):
         stocks_data = self.scrapper.scrap_stocks_data_from_industry_listing(industry_listing_url)
         with self.exp_file_path.open() as f:
             exp_stocks_data = json.load(f)
-        self.assertDictSubSet(stocks_data, exp_stocks_data)
+        # remove market_cap since it can be updated
+        for ticker in stocks_data:
+            stocks_data[ticker].pop('market_cap')
+        for ticker in exp_stocks_data:
+            exp_stocks_data[ticker].pop('market_cap')
+        self.assertDictEqual(stocks_data, exp_stocks_data)
 
     def test_scrap_stock_data(self):
         stock_url = 'https://www.macrotrends.net/stocks/charts/BRK.B/berkshire-hathaway'

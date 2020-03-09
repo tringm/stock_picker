@@ -103,43 +103,46 @@ class MacrotrendsScrapper:
         :return: Dictionary of stocks ticker and its data
         """
         _l = self.logger
-        _l.info(f'Fetching content from industry listing {industry_listing_page_url}')
         res = self.fetch(industry_listing_page_url)
         soup = self.soupify(res.content, 'html.parser')
         data_script = soup.find('script', string=re.compile('var data'))
         if not data_script:
-            raise ParsingError("Failed to find script containing `var data` in the page content")
+            raise ParsingError('fail to find script containing `var data` in the page content')
         data_script_string = data_script.string
         stocks_data_table_string = self.regex_search_must_exist(r'(?<=var data = )(.*)', data_script_string)
+        _l.debug(f'scrapped stocks data table: {stocks_data_table_string}')
         try:
-            stocks_data_table = json.loads(stocks_data_table_string)
+            scrapped_stocks_data_table = json.loads(stocks_data_table_string)
         except Exception as e:
-            _l.debug(f'Table content: {stocks_data_table_string}')
-            raise ParsingError(f'Failed to parse stocks data table: {e}')
+            raise ParsingError(f'fail to JSON parse stocks data table: {e}')
         stocks_data = {}
-        for stock_datum in stocks_data_table:
+        parse_succeed = 0
+        for scrapped_stock_datum in scrapped_stocks_data_table:
+            _l.debug(f'parsing datum: {scrapped_stock_datum}')
             try:
-                stock_ticker = stock_datum['ticker']
-                stocks_data[stock_ticker] = {
-                    'country': stock_datum['country_code'],
-                    'market_cap': stock_datum['market_val'],
-                    'company_name': stock_datum['comp_name'],
-                    'displayable_company_name': stock_datum['comp_name_2'],
-                    'dividend_yield': stock_datum['div_yield'],
-                    'held_by_insiders_pct': stock_datum['held_by_insiders_pct'],
-                    'held_by_institutions_pct': stock_datum['held_by_institutions_pct'],
-                    'url': f"{self.prefix_url}/stocks/charts/{stock_ticker}/{stock_datum['comp_name']}"
+                stock_ticker = scrapped_stock_datum['ticker']
+                stock_datum = {
+                    'country': self.beautify_field(scrapped_stock_datum['country_code']),
+                    'company_name': scrapped_stock_datum['comp_name'],
+                    'url': f"{self.prefix_url}/stocks/charts/{stock_ticker}/{scrapped_stock_datum['comp_name']}"
                 }
+                try:
+                    stock_datum['market_cap'] = float(scrapped_stock_datum['market_val'])
+                except Exception as e:
+                    _l.error(f'failed to parse market_val field: {e}')
+                    stock_datum['market_cap'] = None
+                try:
+                    stock_datum['backup_url'] = self.soupify(
+                        scrapped_stock_datum['link'], 'html.parser').a['href'].replace('/stock-price-history', '')
+                except Exception as e:
+                    _l.error(f'failed to parse backup url: {e}')
+                    stock_datum['backup_url'] = None
             except Exception as e:
-                _l.error(f'Failed to parse stock data: {e} in {stock_datum}')
+                _l.error(f'failed to parse stock datum: {e}')
                 continue
-            try:
-                stocks_data[stock_ticker]['backup_url'] = \
-                    self.soupify(stock_datum['link'], 'html.parser').a['href'].replace('/stock-price-history', '')
-            except Exception as e:
-                _l.error(f"Failed to parse back up url: {e} in {stock_datum['link']}")
-            _l.debug(f'Parsed ticker `{stock_ticker}`')
-        _l.info(f'Found {len(stocks_data)} stocks data in this industry listing')
+            stocks_data[stock_ticker] = stock_datum
+            parse_succeed += 1
+        _l.info(f'sucessfully parsed {parse_succeed}/{len(stocks_data)} stocks data in this industry listing')
         return stocks_data
 
     def scrap_stock_financial_aspect_data(self, financial_aspect: str, stock_url: str):
