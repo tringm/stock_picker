@@ -35,30 +35,32 @@ class MacrotrendsScrapper:
 
     def fetch(self, url):
         """Raise error if cannot fetch data"""
-        self.logger.debug(f"Fetching {url}")
+        self.logger.debug(f"fetching {url}")
         try:
             res = requests.get(url)
         except Exception as e:
-            raise FetchingError(f'Failed to fetch {url}: {e}')
+            raise FetchingError(f'fail to fetch {url}: {e}')
         return res
 
     def soupify(self, content, parser):
         """Raise error if cannot soupify content"""
-        self.logger.debug(f'Soupifying the following content with parser {parser}: {content[:100]}...')
+        _l = self.logger
+        _l.debug(f'soupifying the following content with parser {parser}')
+        _l.debug(content)
         try:
             soup = BeautifulSoup(content, parser)
         except Exception as e:
-            self.logger.debug(f'Failed to soupify content {content}')
-            raise ParsingError(f'Failed to parse content with beautiful soup: {e}')
+            raise ParsingError(f'fail to soupify content: {e}')
         return soup
 
     def regex_search_must_exist(self, pattern, string) -> str:
         """Raise error if no match found"""
-        self.logger.debug(f'Regex search the following string with pattern {pattern}: {string[:100]}...')
+        _l = self.logger
+        _l.debug(f'regex search the following string with pattern {pattern}')
+        _l.debug(string)
         re_match = re.search(pattern, string)
         if not re_match:
-            self.logger.debug(f'Failed to regex search string: {string}')
-            raise RegexError(f'No result when searching the following string with pattern {pattern}: {string}')
+            raise RegexError(f'no match with pattern {pattern}')
         return string[re_match.start():re_match.end()]
 
     @staticmethod
@@ -70,27 +72,29 @@ class MacrotrendsScrapper:
         :return: Dictionary of industries and their corresponding urls
         """
         _l = self.logger
-        _l.info('Fetching content from the research page')
         res = self.fetch(self.stock_research_page_url)
         soup = self.soupify(res.content, 'html.parser')
         tables = soup.find_all('table')
         if not tables:
-            raise ParsingError("Could not find any table from the research page")
+            raise ParsingError('tables not found')
         list_by_industry_table = [tbl for tbl in tables if tbl.thead.tr.th.strong.string == 'Stocks by Industry']
         if not list_by_industry_table:
-            raise ParsingError("Could not find table `Stocks by Industry` in the research page")
+            raise ParsingError('table `Stocks by Industry` not found')
         list_by_industry_table = list_by_industry_table[0]
         industry_cells = list_by_industry_table.find_all('td', attrs={'style': 'text-align:left'})
         if not industry_cells:
-            raise ParsingError("Could not find any industry cell in the `Stock by Industry` table")
+            raise ParsingError('fail to parse industry cells in table `Stock by Industry`')
         industry_listing_urls = {}
+        parse_succeed = 0
         for cell in industry_cells:
             try:
                 industry_listing_urls[self.beautify_field(cell.a.string)] = self.prefix_url + cell.a['href']
+                parse_succeed += 1
             except Exception as e:
-                _l.error(f'Failed to parse industry cell {cell}: {e}')
-        _l.info(f'Found {len(industry_listing_urls)} industry listing url')
-        _l.debug(f"Found following industry listing: {', '.join(industry_listing_urls.keys())}")
+                _l.error(f'fail to parse industry cell {cell}: {e}')
+                continue
+        _l.info(f'successfully parsed {parse_succeed}/{len(industry_listing_urls)} industry listing url')
+        _l.debug(f"found the following industry listing: {', '.join(industry_listing_urls.keys())}")
         return industry_listing_urls
 
     def scrap_stocks_data_from_industry_listing(self, industry_listing_page_url: str) -> Dict:

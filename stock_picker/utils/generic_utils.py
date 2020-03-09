@@ -22,11 +22,6 @@ def logging_config(
     :param kwargs:
     :return:
     """
-    """
-    Wrapper for logging basic config with a default format
-    :param log_file_path: path to log file. if not defined then use stderr
-    :param logging_level: The logging levels
-    """
     logging.basicConfig(format=log_format, datefmt=log_date_fmt, **kwargs)
     if use_gmt_time:
         logging.Formatter.converter = time.gmtime
