@@ -1,5 +1,5 @@
 from stock_picker.scrapper.macrotrends import MacrotrendsScrapper
-from tests.test_case import TestCaseCompare
+from tests.cases import TestCaseCompare
 import json
 
 

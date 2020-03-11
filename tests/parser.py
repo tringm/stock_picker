@@ -2,7 +2,7 @@ import argparse
 import sys
 
 from stock_picker.utils.generic_utils import root_path, logging_config
-from tests.test_result import *
+from tests.results import *
 
 
 class ArgParser(argparse.ArgumentParser):
@@ -68,7 +68,7 @@ def execute_parser(parser):
         parser.error(f"Metric log file dir {metric_log_path.parent} does not exist")
     os.environ['METRICS_LOG_PATH'] = str(metric_log_path)
     if args.verbosity:
-        logging_config(logging_level=10)
+        logging_config(level=10)
         verbosity = 2
     else:
         logging_config()
