@@ -32,4 +32,5 @@ class TestMacrotrendsScrapper(TestCaseCompare):
         stock_data = self.scrapper.scrap_stock_data(stock_url)
         with self.exp_file_path.open() as f:
             exp_stock_data = json.load(f)
-        self.assertDictSubSet(stock_data, exp_stock_data)
+        for field in ('balance_sheet', 'cash_flow_statement', 'income_statement', 'price'):
+            self.assertSetEqual(set(stock_data[field].keys()), set(exp_stock_data[field].keys()))
