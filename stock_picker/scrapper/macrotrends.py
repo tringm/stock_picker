@@ -267,10 +267,12 @@ class MacrotrendsScrapper:
         LOG.debug(f'fetching stock data of {stock_url}...')
         responses = self.fetch_stock_detail_pages(stock_url)
         stock_data = {
-            'income_statement': self.scrap_stock_financial_aspect_page(responses[0]),
-            'balance_sheet': self.scrap_stock_financial_aspect_page(responses[1]),
-            'cash_flow_statement': self.scrap_stock_financial_aspect_page(responses[2]),
-            'stock_price_history': self.scrap_stock_price_data_and_profile_page(responses[3])
+            field: self.scrap_stock_financial_aspect_page(responses[idx])
+            for idx, field in enumerate(['income_statement', 'balance_sheet', 'cash_flow_statement'])
         }
+        scrapped_price_data = self.scrap_stock_price_data_and_profile_page(responses[3])
+        for field in ['sector', 'industry', 'description']:
+            stock_data[field] = scrapped_price_data.pop(field)
+        stock_data['price'] = scrapped_price_data['price']
         LOG.info(f'fetched stock data of {stock_url}')
         return stock_data
