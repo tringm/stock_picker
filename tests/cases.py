@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional, Union, Dict
 import json
 
-from stock_picker.utils.generic_utils import root_path
+from stock_picker.utils.generic_utils import ROOT_PATH
 
 
 class TestCaseTimer(unittest.TestCase):
@@ -38,7 +38,7 @@ class TestCaseCompare(TestCaseTimer):
         :param test_path: Path to test class io folder if specified, else use class name
         :return:
         """
-        io_path = root_path().joinpath(io_folder_path)
+        io_path = ROOT_PATH.joinpath(io_folder_path)
         if not test_path:
             test_path = cls.__name__
         cls.input_folder = (io_path / in_folder_name).joinpath(test_path)

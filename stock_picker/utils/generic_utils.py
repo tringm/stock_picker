@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 import time
 
+ROOT_PATH = Path(__file__).parent.parent.parent
 
 def root_path():
     return Path(__file__).parent.parent.parent
