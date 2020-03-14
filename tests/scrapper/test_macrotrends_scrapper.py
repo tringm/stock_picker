@@ -1,4 +1,4 @@
-from stock_picker.scrapper.macrotrends import MacrotrendsScrapper
+from stock_picker.scrapper.macrotrends.scrapper import Scrapper
 from tests.cases import TestCaseCompare
 import json
 
@@ -7,7 +7,7 @@ class TestMacrotrendsScrapper(TestCaseCompare):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.scrapper = MacrotrendsScrapper()
+        cls.scrapper = Scrapper()
 
     def write_json_obj_to_out_file(self, obj):
         with self.out_file_path.open('w') as f:
