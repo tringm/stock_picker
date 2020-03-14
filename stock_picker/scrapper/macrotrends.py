@@ -3,7 +3,7 @@ import requests
 import logging
 import re
 import json
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Awaitable
 from aiohttp import ClientSession
 import asyncio
 
@@ -34,6 +34,8 @@ class MacrotrendsScrapper:
     def __init__(self):
         self.main_page_url = 'https://www.macrotrends.net'
         self.stock_research_page_url = self.main_page_url + '/stocks/research'
+        self.financial_aspects = ('income-statement', 'balance-sheet', 'cash-flow-statement')
+        self.beautified_financial_aspects = ('income_statement', 'balance_sheet', 'cash_flow_statement')
 
     @staticmethod
     def _fetch(url):
@@ -124,7 +126,7 @@ class MacrotrendsScrapper:
             scrapped_stocks_data_table = json.loads(stocks_data_table_string)
         except Exception as e:
             raise ScrapError(f'fail to JSON parse stocks data table: {e}', stocks_data_table_string)
-        LOG.debug(f'scrapped stocks data table: {scrapped_stocks_data_table}')
+        LOG.debug(f'scrapped stocks data table')
         stocks_data = {}
         parse_succeed = 0
         for scrapped_stock_datum in scrapped_stocks_data_table:
@@ -154,28 +156,6 @@ class MacrotrendsScrapper:
         LOG.info(f'successfully parsed {parse_succeed}/{len(stocks_data)} stocks data in this industry listing')
         return stocks_data
 
-    def fetch_stock_detail_pages(self, stock_main_page_url: str) -> List:
-        """async fetch income statement, balance sheet, cash flow statement and price pages of a stock
-
-        :param stock_main_page_url: stock main page url to be used as prefix
-        :return: List of page content
-        """
-
-        async def run():
-            async with ClientSession(raise_for_status=True) as session:
-                tasks = [self._async_fetch(session, url) for url in detail_page_urls]
-                return await asyncio.gather(*tasks)
-
-        detail_page_urls = (
-            f'{stock_main_page_url}/{postfix}'
-            for postfix in ('income-statement', 'balance-sheet', 'cash-flow-statement', 'stock-price-history')
-        )
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        responses = loop.run_until_complete(run())
-        LOG.info(f'fetched details page of {stock_main_page_url}')
-        return responses
-
     def scrap_stock_financial_aspect_page(self, financial_aspect_page_content: str):
         """ scrap financial aspect data from page
 
@@ -204,7 +184,7 @@ class MacrotrendsScrapper:
                 scrapped_data[field_name] = [float(raw_field_data[yr]) if raw_field_data[yr] else None for yr in years]
             except Exception as e:
                 raise ScrapError(f'table `{field_name}` data: {e}', raw_field_data)
-        LOG.debug(f'scrapped financial aspect data from {financial_aspect_page_content}')
+        LOG.debug(f'scrapped financial aspect data')
         return scrapped_data
 
     def scrap_stock_price_data_and_profile_page(self, price_page_content: str) -> Dict:
@@ -258,21 +238,77 @@ class MacrotrendsScrapper:
         LOG.debug(f'scrapped price data')
         return scrapped_data
 
-    def scrap_stock_data(self, stock_url: str):
-        """Scrap stock data from its url
+    async def async_scrap_stock_pages(
+            self,
+            client_session: ClientSession,
+            stock_main_page_url: str
+    ):
+        """
 
-        :param stock_url: macrotrends stock url
+        :param client_session: aiohttp client session
+        :param stock_main_page_url: the main page of a stock
+        :return: scrapped page
+        """
+        async def fetch_and_scrap_fin_asp_page(aspect: str) -> Optional[Dict]:
+            LOG.debug(f'fetching {stock_main_page_url}/{aspect}')
+            async with client_session.get(f'{stock_main_page_url}/{aspect}') as resp:
+                if resp.status != 200:
+                    return None
+                resp_text = await resp.text()
+                return self.scrap_stock_financial_aspect_page(resp_text)
+
+        async def fetch_and_scrap_price_page() -> Optional[Dict]:
+            LOG.debug(f'fetching {stock_main_page_url}/stock-price-history')
+            async with client_session.get(f'{stock_main_page_url}/stock-price-history') as resp:
+                if resp.status != 200:
+                    return None
+                resp_text = await resp.text()
+                return self.scrap_stock_price_data_and_profile_page(resp_text)
+        tasks = [fetch_and_scrap_fin_asp_page(asp) for asp in self.financial_aspects] + [fetch_and_scrap_price_page()]
+        return await asyncio.gather(*tasks)
+
+    def get_stock_data_from_scrapped_pages(self, scrapped_pages: List[Dict]):
+        """
+
+        :param scrapped_pages: scrapped page in order of fin aspects + price
         :return:
         """
-        LOG.debug(f'fetching stock data of {stock_url}...')
-        responses = self.fetch_stock_detail_pages(stock_url)
-        stock_data = {
-            field: self.scrap_stock_financial_aspect_page(responses[idx])
-            for idx, field in enumerate(['income_statement', 'balance_sheet', 'cash_flow_statement'])
-        }
-        scrapped_price_data = self.scrap_stock_price_data_and_profile_page(responses[3])
+        stock_data = {field: scrapped_pages[idx] for idx, field in enumerate(self.beautified_financial_aspects)}
+        scrapped_price_data = scrapped_pages[3]
         for field in ['sector', 'industry', 'description']:
             stock_data[field] = scrapped_price_data.pop(field)
         stock_data['price'] = scrapped_price_data['price']
-        LOG.info(f'fetched stock data of {stock_url}')
         return stock_data
+
+    async def async_scrap_stock_data(self, client_session: ClientSession, stock_main_page_url: str) -> Dict:
+        LOG.debug(f'scrapping {stock_main_page_url}')
+        scrapped_pages = await self.async_scrap_stock_pages(client_session, stock_main_page_url)
+        LOG.debug(f'fetched all pages')
+        return self.get_stock_data_from_scrapped_pages(scrapped_pages)
+
+    def scrap_multiple_stocks(self, main_page_urls: List[str]) -> List[Dict]:
+        async def run():
+            async with ClientSession(raise_for_status=True) as session:
+                tasks = [self.async_scrap_stock_data(session, url) for url in main_page_urls]
+                return await asyncio.gather(*tasks)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        scrapped_data = loop.run_until_complete(run())
+        LOG.info(f'scrapped {len(main_page_urls)} stocks')
+        return scrapped_data
+
+    def scrap_stock_data(self, stock_main_page_url: str):
+        """Scrap stock data from its url
+
+        :param stock_main_page_url: macrotrends stock url
+        :return:
+        """
+        async def run():
+            async with ClientSession(raise_for_status=True) as session:
+                tasks = [self.async_scrap_stock_data(session, stock_main_page_url)]
+                return await asyncio.gather(*tasks)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        scrapped_data = loop.run_until_complete(run())[0]
+        LOG.info(f'scrapped {stock_main_page_url} stocks')
+        return scrapped_data
