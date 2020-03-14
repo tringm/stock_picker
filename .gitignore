@@ -132,7 +132,8 @@ dmypy.json
 .idea/
 
 # data folder
-data/
+data/*
+!data/macrotrends_meta.json.gz
 
 # test out
 *_out.*
