@@ -121,15 +121,34 @@ class Scrapper:
         LOG.debug(f'scrapped {stock_main_page_url}')
         return stock_data
 
-    def scrap_multiple_stocks(self, stock_main_page_urls: List[str]) -> List[Dict]:
+    async def bound_async_scrap_stock_data(self, semaphore: asyncio.Semaphore, *args):
+        """bound async fetch with semaphore
+
+        :param semaphore:
+        :return:
+        """
+        async with semaphore:
+            return await self.async_scrap_stock_data(*args)
+
+    def scrap_multiple_stocks(self, stock_main_page_urls: List[str], limit: int = 50) -> List[Dict]:
+        """scrap multiple stocks data
+
+        :param stock_main_page_urls: list of stocks main page url
+        :param limit: limit concurrency with semaphore
+        :return:
+        """
         async def run():
             async with ClientSession() as session:
-                tasks = [self.async_scrap_stock_data(session, url) for url in stock_main_page_urls]
+                tasks = [self.bound_async_scrap_stock_data(semaphore, session, url) for url in stock_main_page_urls]
                 return await asyncio.gather(*tasks, return_exceptions=True)
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        scrapped_data = loop.run_until_complete(run())
+        semaphore = asyncio.Semaphore(limit)
+        loop = asyncio.get_event_loop()
+        try:
+            scrapped_data = loop.run_until_complete(run())
+        finally:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.close()
         LOG.info(f'scrapped {len(stock_main_page_urls)} stock data')
         return scrapped_data
 

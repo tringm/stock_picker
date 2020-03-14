@@ -44,7 +44,7 @@ class TestMacrotrendsScrapper(TestCaseCompare):
         for field in ('balance_sheet', 'cash_flow_statement', 'income_statement', 'price'):
             self.assertSetEqual(set(stock_data[field].keys()), set(exp_stock_data[field].keys()))
 
-    def test_async_scrap_multiple_stocks_data(self):
+    def test_scrap_multiple_stocks_data(self):
         stock_urls = ['https://www.macrotrends.net/stocks/charts/BRK.A/berkshire-hathaway',
                       'https://www.macrotrends.net/stocks/charts/BRK.B/berkshire-hathaway']
         stocks_data = self.scrapper.scrap_multiple_stocks(stock_urls)
