@@ -11,7 +11,7 @@ LOG = logging.getLogger('Picker')
 
 
 def apply_f_excl_none(func, array):
-    array_excl_none = [item for item in array if item is not None]
+    array_excl_none = [item for item in array if item is not None and not np.isnan(item)]
     if not array_excl_none:
         return None
     else:
@@ -19,6 +19,8 @@ def apply_f_excl_none(func, array):
 
 
 def div(item1, item2):
+    if item2 == 0:
+        return None
     try:
         return item1 / item2
     except Exception:
@@ -47,14 +49,19 @@ def reverse_sign(number):
 
 
 def coef_var(arr):
-    array_excl_none = [item for item in arr if item is not None]
+    array_excl_none = [item for item in arr if item is not None and not np.isnan(item)]
+    avg = np.average(array_excl_none)
+    if avg == 0:
+        return None
     try:
-        return np.std(array_excl_none) / np.average(array_excl_none)
+        return np.std(array_excl_none) / avg
     except Exception:
         return None
 
 
 def change_rate(item1, item2):
+    if item2 == 0:
+        return None
     try:
         return (item1 - item2)/item2
     except Exception:
