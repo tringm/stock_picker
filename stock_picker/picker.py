@@ -1,11 +1,10 @@
 from pathlib import Path
 import json
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Iterable
 import numpy as np
 from collections import OrderedDict
 import csv
-from sklearn.linear_model import LinearRegression
 
 
 LOG = logging.getLogger('Picker')
@@ -40,7 +39,7 @@ def add(item1, item2):
         return None
 
 
-def reverse_sing(number):
+def reverse_sign(number):
     if number is not None:
         return -number
     else:
@@ -71,6 +70,8 @@ def check_lt(num1, num2):
 def flipped_linear_corrcoef(arr, n_data_points):
     arr_exc_none = [item for item in arr if item is not None]
     flipped_arr = np.flip(arr_exc_none[:n_data_points])
+    if len(flipped_arr) < n_data_points:
+        return None
     return np.corrcoef(flipped_arr, list(range(len(flipped_arr))))[0, 1]
 
 
@@ -132,7 +133,7 @@ class Picker:
                 'total_common_and_preferred_stock_dividends_paid': None,
                 'net_cash_flow': {
                     'periods': [(0, 4)],
-                    'functions': [coef_var]
+                    'functions': [np.average, coef_var]
                 }
             },
             'price': {
@@ -256,11 +257,12 @@ class Picker:
         metrics_rep['eps_growth_prev_0_4_vs_10_14_y'] = change_rate(
             period_rep['average_eps_earnings_per_share_prev_0_4_y'],
             period_rep['average_eps_earnings_per_share_prev_10_14_y'])
+        metrics_rep['linear_corrcoef_eps_last_5y'] = flipped_linear_corrcoef(i_s_data['eps_earnings_per_share'], 5)
         metrics_rep['average_r_and_d_expenses_ratio_prev_0_4_y'] = div(
             period_rep['average_research_and_development_expenses_prev_0_4_y'],
             period_rep['average_operating_expenses_prev_0_4_y']
         )
-        metrics_rep['average_interest_exp_per_net_income_ratio'] = div(
+        metrics_rep['average_non_op_income_expense_per_net_income_ratio_prev_0_4_y'] = div(
             period_rep['average_total_non_operating_income_expense_prev_0_4_y'],
             period_rep['average_net_income_prev_0_4_y']
         )
@@ -325,13 +327,14 @@ class Picker:
         metrics_rep['linear_corrcoef_equity_issued_last_5y'] = flipped_linear_corrcoef(
             c_f_data['net_total_equity_issued_repurchased'], 5)
         metrics_rep['latest_dividend_net_income_ratio'] = div(
-            c_f_data['total_common_and_preferred_stock_dividends_paid'][0], c_f_data['net_income_loss'][0])
+            reverse_sign(c_f_data['total_common_and_preferred_stock_dividends_paid'][0]),
+            c_f_data['net_income_loss'][0])
         metrics_rep['average_dividend_net_income_ratio_prev_0_4_y'] = div(
-            period_rep['average_total_common_and_preferred_stock_dividends_paid_prev_0_4_y'],
+            reverse_sign(period_rep['average_total_common_and_preferred_stock_dividends_paid_prev_0_4_y']),
             period_rep['average_net_income_loss_prev_0_4_y'])
         return period_rep, metrics_rep
 
-    def generate_metrics_report(self, stock_ticker) -> OrderedDict:
+    def generate_period_and_metric_report(self, stock_ticker) -> Tuple[OrderedDict, OrderedDict]:
         LOG.debug(f'generating {stock_ticker} report...')
         stock_data = self.get_stock_data(stock_ticker)
 
@@ -362,15 +365,17 @@ class Picker:
             price_period_rep['average_average_stock_price_prev_5_9_y'],
             i_s_period_rep['average_eps_earnings_per_share_prev_5_9_y']
         )
-        price_metrics_rep['latest_bv_per_share'] = div(
-            sub(b_s_data['share_holder_equity'][0], b_s_data['goodwill_and_intangible_assets'][0]),
-            i_s_data['shares_outstanding'][0]
-        )
+        latest_bv = sub(b_s_data['share_holder_equity'][0], b_s_data['goodwill_and_intangible_assets'][0]) if \
+            b_s_data['goodwill_and_intangible_assets'][0] else b_s_data['share_holder_equity'][0]
+        price_metrics_rep['latest_bv_per_share'] = div(latest_bv, i_s_data['shares_outstanding'][0])
         price_metrics_rep['latest_pb'] = div(price_metrics_rep['latest_price'], price_metrics_rep['latest_bv_per_share'])
+
+        avg_good_will_and_intangible = b_s_period_rep['average_goodwill_and_intangible_assets_prev_0_4_y'] if \
+            b_s_period_rep['average_goodwill_and_intangible_assets_prev_0_4_y'] else 0
         average_bv_per_share_prev_0_4_y = div(
             sub(
                 b_s_period_rep['average_share_holder_equity_prev_0_4_y'],
-                b_s_period_rep['average_goodwill_and_intangible_assets_prev_0_4_y']
+                avg_good_will_and_intangible
             ),
             i_s_period_rep['average_shares_outstanding_prev_0_4_y']
         )
@@ -385,6 +390,11 @@ class Picker:
         price_metrics_rep['average_return_on_equity_prev_0_4_y'] = div(
             i_s_period_rep['average_net_income_prev_0_4_y'], b_s_period_rep['average_share_holder_equity_prev_0_4_y']
         )
+        price_metrics_rep['latest_dividend_per_share'] = div(
+            reverse_sign(c_f_data['total_common_and_preferred_stock_dividends_paid'][0]),
+            i_s_data['shares_outstanding'][0])
+        price_metrics_rep['latest_dividend_yield'] = div(
+            price_metrics_rep['latest_dividend_per_share'], price_metrics_rep['latest_price'])
 
         metrics_rep = OrderedDict(**{
             'ticker': stock_ticker,
