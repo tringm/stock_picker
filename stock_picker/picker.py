@@ -489,48 +489,28 @@ class Picker:
     def create_reports_from_multiple_tickers(
             self,
             tickers: List,
-            condensed_report: bool = True,
-            auto_filter: bool = True
-    ):
-        """ create report from ticker and create an average of the grouped
-
-        :param tickers:
-        :param condensed_report:
-        :param auto_filter:
-        :return: list of report for each ticker and avg_report
+            auto_filter: bool = True,
+            period_report_out_file_path: Path = None,
+            metrics_report_out_file_path: Path = None
+    ) -> Tuple[List[Tuple[OrderedDict, OrderedDict]], OrderedDict]:
+        """create period and metric reports from multiple tickers and an average of the group
+        :param tickers: list of tickers
+        :param auto_filter: filter the group with the default filter
+        :param period_report_out_file_path: output file for period reports
+        :param metrics_report_out_file_path: output file for metrics report
+        :return:
         """
-        reports = [self.generate_metrics_report(tkr) for tkr in tickers]
-        avg_report = self.create_group_average_report(reports)
+        period_and_metric_reports = [self.generate_period_and_metric_report(tkr) for tkr in tickers]
+        avg_metric_report = self.create_group_average_report([rep[1] for rep in period_and_metric_reports])
         if auto_filter:
-            reports = [rep for rep in reports if self.default_filter(rep, group_avg=avg_report)]
-        return reports, avg_report
-
-    def write_sector_condensed_reports_to_csv(
-            self,
-            output_file_path: Path,
-            sector: str,
-            auto_filter: bool = True
-    ):
-        LOG.debug(f'writing {sector} report to {output_file_path}')
-        sector_tickers = self.get_sector_tickers(sector)
-        reports, avg_report = self.create_reports_from_multiple_tickers(sector_tickers, True, auto_filter)
-        if reports:
-            fields_name = list(reports[0].keys())
-            self.write_reports_to_csv(output_file_path, fields_name, reports + [avg_report])
-        else:
-            LOG.info('No report remaining after filtering')
-
-    def write_industry_condensed_reports_to_csv(
-            self,
-            output_file_path: Path,
-            industry: str,
-            auto_filter: bool = True
-    ):
-        LOG.debug(f'writing {industry} report to {output_file_path}')
-        industry_tickers = self.get_industry_tickers(industry)
-        reports, avg_report = self.create_reports_from_multiple_tickers(industry_tickers, True, auto_filter)
-        if reports:
-            fields_name = list(reports[0].keys())
-            self.write_reports_to_csv(output_file_path, fields_name, reports + [avg_report])
-        else:
-            LOG.info('No report remaining after filtering')
+            period_and_metric_reports = [rep for idx, rep in enumerate(period_and_metric_reports) if
+                                         self.default_filter(rep[0], rep[1], group_avg=avg_metric_report)]
+        if period_report_out_file_path:
+            period_reports = [rep[0] for rep in period_and_metric_reports]
+            fields_name = list(period_reports[0].keys())
+            self.write_reports_to_csv(period_report_out_file_path, fields_name, period_reports)
+        if metrics_report_out_file_path:
+            metrics_reports = [rep[1] for rep in period_and_metric_reports]
+            fields_name = list(metrics_reports[0].keys())
+            self.write_reports_to_csv(metrics_report_out_file_path, fields_name, metrics_reports + [avg_metric_report])
+        return period_and_metric_reports, avg_metric_report
