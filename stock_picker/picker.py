@@ -402,7 +402,9 @@ class Picker:
             'market_cap': stock_data['market_cap'],
             'industry': stock_data['industry']
         }, **i_s_metrics_rep, **b_s_metrics_rep, **c_f_metrics_rep, **price_metrics_rep)
-        return metrics_rep
+        period_rep = OrderedDict(
+            **{'ticker': stock_ticker}, **i_s_period_rep, **b_s_period_rep, **c_f_period_rep, **price_period_rep)
+        return period_rep, metrics_rep
 
     @staticmethod
     def default_filter(
