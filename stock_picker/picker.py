@@ -261,9 +261,15 @@ class Picker:
         metrics_rep['eps_growth_prev_0_4_vs_5_9_y'] = change_rate(
             period_rep['average_eps_earnings_per_share_prev_0_4_y'],
             period_rep['average_eps_earnings_per_share_prev_5_9_y'])
+        if period_rep['average_eps_earnings_per_share_prev_0_4_y'] < 0 and \
+                period_rep['average_eps_earnings_per_share_prev_5_9_y']:
+            metrics_rep['eps_growth_prev_0_4_vs_5_9_y'] = -metrics_rep['eps_growth_prev_0_4_vs_5_9_y']
         metrics_rep['eps_growth_prev_0_4_vs_10_14_y'] = change_rate(
             period_rep['average_eps_earnings_per_share_prev_0_4_y'],
             period_rep['average_eps_earnings_per_share_prev_10_14_y'])
+        if period_rep['average_eps_earnings_per_share_prev_0_4_y'] < 0 \
+                and period_rep['average_eps_earnings_per_share_prev_5_9_y']:
+            metrics_rep['eps_growth_prev_0_4_vs_10_14_y'] =  metrics_rep['eps_growth_prev_0_4_vs_10_14_y']
         metrics_rep['linear_corrcoef_eps_last_5y'] = flipped_linear_corrcoef(i_s_data['eps_earnings_per_share'], 5)
         metrics_rep['average_r_and_d_expenses_ratio_prev_0_4_y'] = div(
             period_rep['average_research_and_development_expenses_prev_0_4_y'],
