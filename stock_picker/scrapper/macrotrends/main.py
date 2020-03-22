@@ -15,6 +15,7 @@ def set_up_logging():
     logging.getLogger('scrapper.macrotrends').addHandler(console)
 
 
+
 set_up_logging()
 data_folder = ROOT_PATH / 'data'
 scrapper = Scrapper()
@@ -48,6 +49,7 @@ stocks_data_folder = (data_folder / 'stocks_data')
 stocks_data_folder.mkdir(parents=True, exist_ok=True)
 count_success = 0
 
+# TODO: Rerun failed ticker
 failed_tickers = {}
 stocks_ticker = list(stocks_data.keys())
 stocks_url = [stocks_data[ticker]['url'] for ticker in stocks_ticker]
