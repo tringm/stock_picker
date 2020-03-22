@@ -408,51 +408,58 @@ class Picker:
 
     @staticmethod
     def default_filter(
-            report: Dict,
-            market_cap_limit: float = 50,
+            period_report: Dict,
+            metrics_report: Dict,
+            filtering_country: Iterable[str] =(
+                    'argentina', 'australia', 'bermuda', 'brazil', 'chile', 'china', 'columbia',
+                    'hong_kong_sar_china', 'india', 'indonesia', 'israel', 'japan', 'mexico', 'russia', 'south_africa'),
             positive_avg_earning: bool = True,
             solid_liquidity: bool = True,
             positive_net_cash_flow: bool = True,
-            compare_current_pe_vs_avg_last_5y: bool = True,
+            non_op_expense: bool = True,
             group_avg: Dict = None,
     ):
-
-        ticker = report['ticker']
-        if check_lt(report['market_cap'], market_cap_limit):
-            LOG.info(f'filtered {ticker}: Market cap < {market_cap_limit}B')
-            return False
+        ticker = metrics_report['ticker']
+        LOG.debug(f'filtering {ticker}')
+        if filtering_country:
+            if metrics_report['country'] in filtering_country:
+                LOG.info(f'filtered {ticker}: Filtered country: {metrics_report["country"]}')
+                return False
         if positive_avg_earning:
-            if check_lt(report['avg_eps_prev_0_4_y'], 0) or check_lt(report['avg_eps_prev_5_9_y'], 0):
+            if check_lt(period_report['average_eps_earnings_per_share_prev_0_4_y'], 0) or \
+                    check_lt(period_report['average_eps_earnings_per_share_prev_5_9_y'], 0):
                 LOG.info(f'filtered {ticker}: Either avg EPS prev 0-4y or 5-9y < 0')
                 return False
         if solid_liquidity:
-            if check_lt(report['latest_current_assets_liabilities_ratio'], 1) \
-                    and check_lt(report['latest_total_assets_liabilities_ratio'], 1):
+            if check_lt(metrics_report['latest_current_assets_liabilities_ratio'], 1) \
+                    and check_lt(metrics_report['latest_total_assets_liabilities_ratio'], 1):
                 LOG.info(f'filtered {ticker}: Both current and total assets/liabilities < 1')
                 return False
-            if check_lt(report['latest_price_book_value_ratio'], 0):
+            if check_lt(metrics_report['latest_pb'], 0):
                 LOG.info(f'filtered {ticker}: Negative book value')
                 return False
-            if check_lt(report['avg_price_book_value_ratio_prev_0_4_y'], 0):
+            if check_lt(metrics_report['average_pb_prev_0_4_y'], 0):
                 LOG.info(f'filtered {ticker}: Negative avg book value last 5 yrs')
                 return False
         if positive_net_cash_flow:
-            if check_lt(report['avg_net_cash_flow_prev_0_4_y'], 0):
+            if check_lt(period_report['average_net_cash_flow_prev_0_4_y'], 0):
                 LOG.info(f'filtered {ticker}: Negative avg net cash flow last 5 years')
                 return False
-
-        if compare_current_pe_vs_avg_last_5y:
-            if check_lt(report['avg_pe_prev_0_4_y'], report['latest_pe']):
-                LOG.info(f'filtered {ticker}: Current P/E > avg. P/E last 5 years')
+        if non_op_expense:
+            if (check_lt(metrics_report['average_non_op_income_expense_per_net_income_ratio_prev_0_4_y'], -1)):
+                LOG.info(f'filtered {ticker}: Avg. non op expense last 5 years < -1')
                 return False
 
         if group_avg:
-            if check_lt(group_avg['avg_pe_prev_0_4_y'], report['avg_pe_prev_0_4_y']) and \
-                    check_lt(group_avg['avg_pe_prev_5_9_y'], report['avg_pe_prev_5_9_y']):
+            if check_lt(group_avg['average_pe_prev_0_4_y'], metrics_report['average_pe_prev_0_4_y']) and \
+                    check_lt(group_avg['average_pe_prev_5_9_y'], metrics_report['average_pe_prev_5_9_y']):
                 LOG.info(f'filtered {ticker}: Avg P/E prev 0-4y and 5-9y > group avg')
                 return False
-            if check_lt(report['eps_growth_prev_0_4_vs_5_9'], group_avg['eps_growth_prev_0_4_vs_5_9']) and \
-                    check_lt(report['eps_growth_prev_0_4_vs_10_14'], group_avg['eps_growth_prev_0_4_vs_10_14']):
+            if check_lt(
+                    metrics_report['eps_growth_prev_0_4_vs_5_9_y'], group_avg['eps_growth_prev_0_4_vs_5_9_y']
+            ) and check_lt(
+                metrics_report['eps_growth_prev_0_4_vs_10_14_y'], group_avg['eps_growth_prev_0_4_vs_10_14_y']
+            ):
                 LOG.info(f'filtered {ticker}: Both EPS growth compared to prev 5-9y or prev 10-14y < group avg')
                 return False
         return True
