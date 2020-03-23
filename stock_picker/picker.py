@@ -342,8 +342,80 @@ class Picker:
         metrics_rep['average_dividend_net_income_ratio_prev_0_4_y'] = div(
             reverse_sign(period_rep['average_total_common_and_preferred_stock_dividends_paid_prev_0_4_y']),
             period_rep['average_net_income_loss_prev_0_4_y'])
-        metrics_rep['coef_var_net_cash_flow_last_5y'] = apply_f_excl_none(coef_var, c_f_data['net_cash_flow'][:5])
         return period_rep, metrics_rep
+
+    def generate_price_reports(
+            self, price_data, i_s_data, b_s_data, c_f_data, i_s_period_rep, b_s_period_rep, c_f_period_rep
+    ) -> Tuple[OrderedDict, OrderedDict]:
+        price_period_rep = self.create_report_by_period(price_data, self.report_by_period_schema['price'])
+        price_metrics_rep = OrderedDict()
+        price_metrics_rep['latest_price'] = price_data['year_close'][0] if price_data['year_close'] else None
+
+        # p/e related
+        price_metrics_rep['latest_eps'] = i_s_data['eps_earnings_per_share'][0]
+        price_metrics_rep['latest_pe'] = div(price_metrics_rep['latest_price'], price_metrics_rep['latest_eps'])
+        price_metrics_rep['latest_p_average_e_prev_0_4_y'] = div(
+            price_metrics_rep['latest_price'], i_s_period_rep['average_eps_earnings_per_share_prev_0_4_y'])
+        price_metrics_rep['average_pe_prev_0_4_y'] = div(
+            price_period_rep['average_average_stock_price_prev_0_4_y'],
+            i_s_period_rep['average_eps_earnings_per_share_prev_0_4_y']
+        )
+        price_metrics_rep['average_pe_prev_5_9_y'] = div(
+            price_period_rep['average_average_stock_price_prev_5_9_y'],
+            i_s_period_rep['average_eps_earnings_per_share_prev_5_9_y']
+        )
+
+        # p/cash related
+        price_metrics_rep['latest_cash_per_share'] = div(
+            b_s_data['cash_on_hand'][0], i_s_data['shares_outstanding'][0])
+        price_metrics_rep['latest_p_cash'] = div(
+            price_metrics_rep['latest_price'], price_metrics_rep['latest_cash_per_share']
+        )
+        price_period_rep['average_cash_per_share_prev_0_4_y'] = div(
+            b_s_period_rep['average_cash_on_hand_prev_0_4_y'], i_s_period_rep['average_shares_outstanding_prev_0_4_y'])
+        price_metrics_rep['latest_p_average_cash_prev_0_4_y'] = div(
+            price_metrics_rep['latest_price'], price_period_rep['average_cash_per_share_prev_0_4_y'])
+        price_metrics_rep['average_p_cash_prev_0_4_y'] = div(
+            price_period_rep['average_average_stock_price_prev_0_4_y'],
+            price_period_rep['average_cash_per_share_prev_0_4_y']
+        )
+        price_period_rep['average_net_cash_flow_per_share_prev_0_4_y'] = div(
+            c_f_period_rep['average_net_cash_flow_prev_0_4_y'], i_s_period_rep['average_shares_outstanding_prev_0_4_y'])
+        price_metrics_rep['latest_p_net_cash_flow_prev_0_4_y'] = div(
+            price_metrics_rep['latest_price'], price_period_rep['average_net_cash_flow_per_share_prev_0_4_y'])
+        price_metrics_rep['average_p_net_cash_flow_prev_0_4_y'] = div(
+            price_period_rep['average_average_stock_price_prev_0_4_y'],
+            price_period_rep['average_net_cash_flow_per_share_prev_0_4_y']
+        )
+
+        # p/bv related
+        latest_bv = sub(b_s_data['share_holder_equity'][0], b_s_data['goodwill_and_intangible_assets'][0]) if \
+            b_s_data['goodwill_and_intangible_assets'][0] else b_s_data['share_holder_equity'][0]
+        price_metrics_rep['latest_bv_per_share'] = div(latest_bv, i_s_data['shares_outstanding'][0])
+        price_metrics_rep['latest_p_bv'] = div(
+            price_metrics_rep['latest_price'], price_metrics_rep['latest_bv_per_share'])
+        avg_intangible = b_s_period_rep['average_goodwill_and_intangible_assets_prev_0_4_y'] if \
+            b_s_period_rep['average_goodwill_and_intangible_assets_prev_0_4_y'] else 0
+        price_period_rep['average_bv_per_share_prev_0_4_y'] = div(
+            sub(b_s_period_rep['average_share_holder_equity_prev_0_4_y'], avg_intangible),
+            i_s_period_rep['average_shares_outstanding_prev_0_4_y']
+        )
+        price_metrics_rep['latest_p_average_bv_prev_0_4_y'] = div(
+            price_metrics_rep['latest_price'], price_period_rep['average_bv_per_share_prev_0_4_y'])
+        price_metrics_rep['average_p_bv_prev_0_4_y'] = div(
+            price_period_rep['average_average_stock_price_prev_0_4_y'],
+            price_period_rep['average_bv_per_share_prev_0_4_y']
+        )
+
+        price_metrics_rep['average_return_on_equity_prev_0_4_y'] = div(
+            i_s_period_rep['average_net_income_prev_0_4_y'], b_s_period_rep['average_share_holder_equity_prev_0_4_y']
+        )
+        price_metrics_rep['latest_dividend_per_share'] = div(
+            reverse_sign(c_f_data['total_common_and_preferred_stock_dividends_paid'][0]),
+            i_s_data['shares_outstanding'][0])
+        price_metrics_rep['latest_dividend_yield'] = div(
+            price_metrics_rep['latest_dividend_per_share'], price_metrics_rep['latest_price'])
+        return price_period_rep, price_metrics_rep
 
     def generate_period_and_metric_report(self, stock_ticker) -> Tuple[OrderedDict, OrderedDict]:
         stock_data = self.get_stock_data(stock_ticker)
@@ -358,56 +430,8 @@ class Picker:
         c_f_period_rep, c_f_metrics_rep = self.generate_cash_flow_reports(c_f_data)
 
         price_data = stock_data['price']
-        price_period_rep = self.create_report_by_period(price_data, self.report_by_period_schema['price'])
-        price_metrics_rep = OrderedDict()
-        price_metrics_rep['latest_price'] = price_data['year_close'][0] if price_data['year_close'] else None
-        price_metrics_rep['latest_eps'] = i_s_data['eps_earnings_per_share'][0]
-        price_metrics_rep['latest_pe'] = div(price_metrics_rep['latest_price'], price_metrics_rep['latest_eps'])
-        price_metrics_rep['average_pe_prev_0_4_y'] = div(
-            price_period_rep['average_average_stock_price_prev_0_4_y'],
-            i_s_period_rep['average_eps_earnings_per_share_prev_0_4_y']
-        )
-        price_metrics_rep['average_pe_prev_5_9_y'] = div(
-            price_period_rep['average_average_stock_price_prev_5_9_y'],
-            i_s_period_rep['average_eps_earnings_per_share_prev_5_9_y']
-        )
-        price_metrics_rep['latest_cash_per_share'] = div(
-            b_s_data['cash_on_hand'][0], i_s_data['shares_outstanding'][0])
-        price_metrics_rep['latest_p_cash'] = div(
-            price_metrics_rep['latest_price'], price_metrics_rep['latest_cash_per_share']
-        )
-        price_metrics_rep['average_p_cash_prev_0_4_y'] = div(
-            price_period_rep['average_average_stock_price_prev_0_4_y'],
-            div(b_s_period_rep['average_cash_on_hand_prev_0_4_y'],
-                i_s_period_rep['average_shares_outstanding_prev_0_4_y'])
-        )
-        latest_bv = sub(b_s_data['share_holder_equity'][0], b_s_data['goodwill_and_intangible_assets'][0]) if \
-            b_s_data['goodwill_and_intangible_assets'][0] else b_s_data['share_holder_equity'][0]
-        price_metrics_rep['latest_bv_per_share'] = div(latest_bv, i_s_data['shares_outstanding'][0])
-        price_metrics_rep['latest_pb'] = div(
-            price_metrics_rep['latest_price'], price_metrics_rep['latest_bv_per_share'])
-
-        avg_good_will_and_intangible = b_s_period_rep['average_goodwill_and_intangible_assets_prev_0_4_y'] if \
-            b_s_period_rep['average_goodwill_and_intangible_assets_prev_0_4_y'] else 0
-        average_bv_per_share_prev_0_4_y = div(
-            sub(
-                b_s_period_rep['average_share_holder_equity_prev_0_4_y'],
-                avg_good_will_and_intangible
-            ),
-            i_s_period_rep['average_shares_outstanding_prev_0_4_y']
-        )
-        price_metrics_rep['average_pb_prev_0_4_y'] = div(
-            price_period_rep['average_average_stock_price_prev_0_4_y'],
-            average_bv_per_share_prev_0_4_y
-        )
-        price_metrics_rep['average_return_on_equity_prev_0_4_y'] = div(
-            i_s_period_rep['average_net_income_prev_0_4_y'], b_s_period_rep['average_share_holder_equity_prev_0_4_y']
-        )
-        price_metrics_rep['latest_dividend_per_share'] = div(
-            reverse_sign(c_f_data['total_common_and_preferred_stock_dividends_paid'][0]),
-            i_s_data['shares_outstanding'][0])
-        price_metrics_rep['latest_dividend_yield'] = div(
-            price_metrics_rep['latest_dividend_per_share'], price_metrics_rep['latest_price'])
+        price_period_rep, price_metrics_rep = self.generate_price_reports(
+            price_data, i_s_data, b_s_data, c_f_data, i_s_period_rep, b_s_period_rep, c_f_period_rep)
 
         metrics_rep = OrderedDict(**{
             'ticker': stock_ticker,
@@ -449,7 +473,7 @@ class Picker:
                     and check_lt(metrics_report['latest_total_assets_liabilities_ratio'], 1):
                 LOG.info(f'filtered {ticker}: Both current and total assets/liabilities < 1')
                 return False
-            if check_lt(metrics_report['latest_pb'], 0) or check_lt(metrics_report['average_pb_prev_0_4_y'], 0):
+            if check_lt(metrics_report['latest_p_bv'], 0) or check_lt(metrics_report['average_p_bv_prev_0_4_y'], 0):
                 LOG.info(f'filtered {ticker}: Negative book value')
                 return False
         if positive_net_cash_flow:
