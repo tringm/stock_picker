@@ -14,6 +14,7 @@ sector = 'oils_energy'
 sector_tickers = picker.get_sector_tickers(sector)
 picker.create_reports_from_multiple_tickers(
     sector_tickers,
-    unfiltered_period_report_out_file_path=report_folder / f'{sector}_period_no_filter.csv',
+    unfiltered_period_report_out_file_path=report_folder / f'{sector}_period_unfiltered.csv',
+    unfiltered_metrics_report_out_file_path=report_folder / f'{sector}_metrics_unfiltered.csv',
     filtered_metrics_report_out_file_path=report_folder / f'{sector}_metrics_filtered.csv'
 )

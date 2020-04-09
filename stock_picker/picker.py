@@ -18,12 +18,11 @@ def apply_f_excl_none(func, array):
 
 
 def div(item1, item2):
-    if item2 == 0:
+    if item1 is None or item2 is None:
         return None
-    try:
-        return item1 / item2
-    except Exception:
+    if item2 == 0 or (item1 < 0 and item2 < 0):
         return None
+    return item1 / item2
 
 
 def sub(item1, item2):
@@ -86,6 +85,7 @@ def flipped_linear_corrcoef(arr, n_data_points):
     flipped_arr = np.flip(arr_excl_none[:n_data_points])
     return np.corrcoef(flipped_arr, list(range(len(flipped_arr))))[0, 1]
 
+
 class Picker:
     def __init__(self):
         self._all_stocks_data = {}
@@ -102,6 +102,7 @@ class Picker:
                     'periods': [(0, 4), (5, 9)],
                     'functions': [np.average]
                 },
+                'gross_profit': None,
                 'operating_income': None,
                 'net_income': None,
                 'total_non_operating_income_expense': None,
@@ -117,6 +118,7 @@ class Picker:
                 'cash_on_hand': None,
                 'share_holder_equity': None,
                 'goodwill_and_intangible_assets': None,
+                'inventory': None,
                 'total_current_assets': {
                     'periods': [(0, 4), (5, 9)],
                     'functions': [np.average]
@@ -193,8 +195,10 @@ class Picker:
         for req_field in self.required_info:
             if req_field not in stock_data:
                 raise ValueError(f'{req_field} not in {stock_ticker} data')
+            req_field_data = stock_data[req_field]
+            if len(req_field_data['years']) < 5:
+                raise ValueError(f'{req_field} has less than 5 data points')
             try:
-                req_field_data = stock_data[req_field]
                 ordered_fields = ('years',) + tuple(field for field in req_field_data if field != 'years')
                 zipped = zip(*[req_field_data[field] for field in ordered_fields])
                 for idx, sorted_data in enumerate(zip(*sorted(zipped, reverse=True))):
@@ -254,13 +258,21 @@ class Picker:
         period_rep['corr_coef_eps_last_5y'] = flipped_linear_corrcoef(i_s_data['eps_earnings_per_share'], 5)
         period_rep['corr_coef_shares_outstanding_last_5y'] = flipped_linear_corrcoef(
             i_s_data['shares_outstanding'], 5)
-        period_rep['corr_coef_op_income_margin_last_5y'] = flipped_linear_corrcoef(
-            [div(inc, i_s_data['revenue'][idx]) for idx, inc in enumerate(i_s_data['operating_income'])], 5)
-        metrics_rep['average_operating_income_margin_prev_0_4_y'] = div(
-            period_rep['average_operating_income_prev_0_4_y'], period_rep['average_revenue_prev_0_4_y']
+        period_rep['corr_coef_op_expenses_margin_last_5y'] = flipped_linear_corrcoef(
+            [div(g_p, i_s_data['revenue'][idx]) for idx, g_p in enumerate(i_s_data['operating_expenses'])], 5)
+        metrics_rep['average_op_expenses_margin_prev_0_4_y'] = div(
+            period_rep['average_operating_expenses_prev_0_4_y'], period_rep['average_revenue_prev_0_4_y']
         )
-        metrics_rep['op_expenses_ratio_prev_0_4_y'] = div(
-            period_rep['average_operating_expenses_prev_0_4_y'], period_rep['average_revenue_prev_0_4_y'])
+        period_rep['corr_coef_gross_profit_margin_last_5y'] = flipped_linear_corrcoef(
+            [div(g_p, i_s_data['revenue'][idx]) for idx, g_p in enumerate(i_s_data['gross_profit'])], 5)
+        metrics_rep['average_gross_profit_margin_prev_0_4_y'] = div(
+            period_rep['average_gross_profit_prev_0_4_y'], period_rep['average_revenue_prev_0_4_y']
+        )
+        period_rep['corr_coef_net_income_margin_last_5y'] = flipped_linear_corrcoef(
+            [div(inc, i_s_data['revenue'][idx]) for idx, inc in enumerate(i_s_data['net_income'])], 5)
+        metrics_rep['average_net_income_margin_prev_0_4_y'] = div(
+            period_rep['average_net_income_prev_0_4_y'], period_rep['average_revenue_prev_0_4_y']
+        )
         metrics_rep['eps_growth_prev_0_4_vs_5_9_y'] = change_rate(
             period_rep['average_eps_earnings_per_share_prev_0_4_y'],
             period_rep['average_eps_earnings_per_share_prev_5_9_y'])
@@ -277,10 +289,13 @@ class Picker:
             period_rep['average_research_and_development_expenses_prev_0_4_y'],
             period_rep['average_operating_expenses_prev_0_4_y']
         )
-        metrics_rep['average_non_op_income_expense_per_net_income_ratio_prev_0_4_y'] = div(
-            period_rep['average_total_non_operating_income_expense_prev_0_4_y'],
+        metrics_rep['average_non_op_per_op_expense_prev_0_4_y'] = div(
+            abs(period_rep['average_total_non_operating_income_expense_prev_0_4_y']),
             period_rep['average_net_income_prev_0_4_y']
-        )
+        ) if (
+            period_rep['average_total_non_operating_income_expense_prev_0_4_y'] and
+            period_rep['average_total_non_operating_income_expense_prev_0_4_y'] < 0
+        ) else None
         return period_rep, metrics_rep
 
     def generate_balance_sheet_reports(self, b_s_data: Dict) -> Tuple[OrderedDict, OrderedDict]:
@@ -290,28 +305,43 @@ class Picker:
         :return: (report by periods, metrics report)
         """
         period_rep = self.create_report_by_period(b_s_data, self.report_by_period_schema['balance_sheet'])
-        metrics_rep = OrderedDict()
-        metrics_rep['latest_current_assets_liabilities_ratio'] = div(
-            b_s_data['total_current_assets'][0], b_s_data['total_current_liabilities'][0])
-        metrics_rep['average_current_assets_liabilities_ratio_prev_0_4_y'] = div(
-            period_rep['average_total_current_assets_prev_0_4_y'],
-            period_rep['average_total_current_liabilities_prev_0_4_y']
+        metrics_rep = OrderedDict({
+            'latest_current_assets_liabilities_ratio': div(
+                b_s_data['total_current_assets'][0], b_s_data['total_current_liabilities'][0]
+            ),
+            'average_inventory_current_assets_ratio_prev_0_4_y': div(
+                period_rep['average_inventory_prev_0_4_y'],
+                period_rep['average_total_current_assets_prev_0_4_y']
+            ),
+            'average_current_assets_liabilities_ratio_prev_0_4_y': div(
+                period_rep['average_total_current_assets_prev_0_4_y'],
+                period_rep['average_total_current_liabilities_prev_0_4_y']
+            ),
+            'average_current_assets_liabilities_ratio_prev_5_9_y': div(
+                period_rep['average_total_current_assets_prev_5_9_y'],
+                period_rep['average_total_current_liabilities_prev_5_9_y']
+            ),
+            'latest_total_assets_liabilities_ratio': div(
+                b_s_data['total_assets'][0], b_s_data['total_liabilities'][0]
+            ),
+            'average_total_assets_liabilities_ratio_prev_0_4_y': div(
+                period_rep['average_total_assets_prev_0_4_y'], period_rep['average_total_liabilities_prev_0_4_y']
+            ),
+            'average_total_assets_liabilities_ratio_prev_5_9_y': div(
+                period_rep['average_total_assets_prev_5_9_y'], period_rep['average_total_liabilities_prev_5_9_y']
+            ),
+            'average_cash_ratio_prev_0_4_y': div(
+                period_rep['average_cash_on_hand_prev_0_4_y'],
+                period_rep['average_total_current_liabilities_prev_0_4_y']
+            )
+        })
+        period_rep['corr_coef_current_assets_liabilities_last_5y'] = flipped_linear_corrcoef([
+            div(b_s_data['total_current_assets'][idx], equity)
+            for idx, equity in enumerate(b_s_data['total_current_liabilities'])], 5
         )
-        metrics_rep['average_current_assets_liabilities_ratio_prev_5_9_y'] = div(
-            period_rep['average_total_current_assets_prev_5_9_y'],
-            period_rep['average_total_current_liabilities_prev_5_9_y']
-        )
-        metrics_rep['latest_total_assets_liabilities_ratio'] = div(
-            b_s_data['total_assets'][0], b_s_data['total_liabilities'][0])
-        metrics_rep['average_total_assets_liabilities_ratio_prev_0_4_y'] = div(
-            period_rep['average_total_assets_prev_0_4_y'], period_rep['average_total_liabilities_prev_0_4_y']
-        )
-        metrics_rep['average_total_assets_liabilities_ratio_prev_5_9_y'] = div(
-            period_rep['average_total_assets_prev_5_9_y'], period_rep['average_total_liabilities_prev_5_9_y']
-        )
-        period_rep['corr_coef_debt_equity_last_5y'] = flipped_linear_corrcoef([
-            div(b_s_data['total_liabilities'][idx], equity)
-            for idx, equity in enumerate(b_s_data['share_holder_equity'])], 5
+        period_rep['corr_coef_total_assets_liabilities_last_5y'] = flipped_linear_corrcoef([
+            div(b_s_data['total_assets'][idx], equity)
+            for idx, equity in enumerate(b_s_data['total_liabilities'])], 5
         )
         return period_rep, metrics_rep
 
@@ -322,25 +352,40 @@ class Picker:
         :return: (report by periods, metrics report)
         """
         period_rep = self.create_report_by_period(c_f_data, self.report_by_period_schema['cash_flow_statement'])
-        metrics_rep = OrderedDict()
         period_rep['corr_coef_acc_receivable_last_5y'] = flipped_linear_corrcoef(
             c_f_data['change_in_accounts_receivable'], 5)
         period_rep['corr_coef_debt_issuance_last_5y'] = flipped_linear_corrcoef(
             c_f_data['debt_issuance_retirement_net_total'], 5)
         period_rep['corr_coef_equity_issued_last_5y'] = flipped_linear_corrcoef(
             c_f_data['net_total_equity_issued_repurchased'], 5)
-        metrics_rep['average_debt_issuance_per_op_cash_flow_prev_0_4_y'] = div(
-            period_rep['average_debt_issuance_retirement_net_total_prev_0_4_y'],
-            period_rep['average_net_income_loss_prev_0_4_y'])
-        metrics_rep['average_equity_issued_per_op_cash_flow_prev_0_4_y'] = div(
-            period_rep['average_net_total_equity_issued_repurchased_prev_0_4_y'],
-            period_rep['average_net_income_loss_prev_0_4_y'])
-        metrics_rep['latest_dividend_net_income_ratio'] = div(
-            reverse_sign(c_f_data['total_common_and_preferred_stock_dividends_paid'][0]),
-            c_f_data['net_income_loss'][0])
-        metrics_rep['average_dividend_net_income_ratio_prev_0_4_y'] = div(
-            reverse_sign(period_rep['average_total_common_and_preferred_stock_dividends_paid_prev_0_4_y']),
-            period_rep['average_net_income_loss_prev_0_4_y'])
+        period_rep['corr_coef_net_income_per_op_cash_flow'] = flipped_linear_corrcoef(
+            [div(net_inc, c_f_data['cash_flow_from_operating_activities'][idx])
+             for idx, net_inc in enumerate(c_f_data['net_income_loss'])], 5)
+
+        metrics_rep = OrderedDict({
+            'average_debt_issuance_per_net_income_prev_0_4_y': div(
+                period_rep['average_debt_issuance_retirement_net_total_prev_0_4_y'],
+                period_rep['average_net_income_loss_prev_0_4_y']
+            ) if (
+                period_rep['average_debt_issuance_retirement_net_total_prev_0_4_y'] and
+                period_rep['average_debt_issuance_retirement_net_total_prev_0_4_y'] > 0
+            ) else None,
+            'average_equity_issued_per_net_income_prev_0_4_y': div(
+                period_rep['average_net_total_equity_issued_repurchased_prev_0_4_y'],
+                period_rep['average_net_income_loss_prev_0_4_y']
+            ) if (
+                period_rep['average_net_total_equity_issued_repurchased_prev_0_4_y'] and
+                period_rep['average_net_total_equity_issued_repurchased_prev_0_4_y'] > 0
+            ) else None,
+            'latest_dividend_net_income_ratio': div(
+                reverse_sign(c_f_data['total_common_and_preferred_stock_dividends_paid'][0]),
+                c_f_data['net_income_loss'][0]
+            ),
+            'average_dividend_net_income_ratio_prev_0_4_y':  div(
+                reverse_sign(period_rep['average_total_common_and_preferred_stock_dividends_paid_prev_0_4_y']),
+                period_rep['average_net_income_loss_prev_0_4_y']
+            )
+        })
         return period_rep, metrics_rep
 
     def generate_price_reports(
@@ -407,18 +452,24 @@ class Picker:
             price_metrics_rep['average_bv_per_share_prev_0_4_y']
         )
 
-        price_metrics_rep['average_return_on_equity_prev_0_4_y'] = div(
+        price_metrics_rep['average_ROA_prev_0_4_y'] = div(
+            i_s_period_rep['average_net_income_prev_0_4_y'], b_s_period_rep['average_total_assets_prev_0_4_y']
+        )
+        price_metrics_rep['average_ROE_prev_0_4_y'] = div(
             i_s_period_rep['average_net_income_prev_0_4_y'], b_s_period_rep['average_share_holder_equity_prev_0_4_y']
         )
         price_metrics_rep['latest_dividend_per_share'] = div(
             reverse_sign(c_f_data['total_common_and_preferred_stock_dividends_paid'][0]),
-            i_s_data['shares_outstanding'][0])
+            i_s_data['shares_outstanding'][0]
+        )
         price_metrics_rep['latest_dividend_yield'] = div(
-            price_metrics_rep['latest_dividend_per_share'], price_metrics_rep['latest_price'])
+            price_metrics_rep['latest_dividend_per_share'], price_metrics_rep['latest_price']
+        )
         return price_period_rep, price_metrics_rep
 
     def generate_period_and_metrics_report(self, stock_ticker) -> Tuple[OrderedDict, OrderedDict]:
-        LOG.debug(f'genearing {stock_ticker} period and metrics report')
+
+        LOG.debug(f'generating {stock_ticker} period and metrics report')
         stock_data = self.get_stock_data(stock_ticker)
 
         i_s_data = stock_data['income_statement']
@@ -434,12 +485,18 @@ class Picker:
         price_period_rep, price_metrics_rep = self.generate_price_reports(
             price_data, i_s_data, b_s_data, c_f_data, i_s_period_rep, b_s_period_rep, c_f_period_rep)
 
+        other_metrics = OrderedDict({
+            'net_cash_flow_per_market_cap': div(
+                price_metrics_rep['average_net_cash_flow_per_share_prev_0_4_y'], stock_data['market_cap']
+            )
+        })
+
         metrics_rep = OrderedDict(**{
             'ticker': stock_ticker,
             'country': stock_data['country'],
             'market_cap': stock_data['market_cap'],
             'industry': stock_data['industry']
-        }, **i_s_metrics_rep, **b_s_metrics_rep, **c_f_metrics_rep, **price_metrics_rep)
+        }, **i_s_metrics_rep, **b_s_metrics_rep, **c_f_metrics_rep, **other_metrics, **price_metrics_rep)
         period_rep = OrderedDict(
             **{'ticker': stock_ticker}, **i_s_period_rep, **b_s_period_rep, **c_f_period_rep, **price_period_rep)
         return period_rep, metrics_rep
@@ -448,15 +505,19 @@ class Picker:
     def default_filter(
             period_report: Dict,
             metrics_report: Dict,
+            market_cap: int = 100,
             filtering_country: Iterable[str] = (
                     'argentina', 'australia', 'bermuda', 'brazil', 'chile', 'china', 'columbia',
                     'hong_kong_sar_china', 'india', 'indonesia', 'israel', 'japan', 'mexico', 'russia', 'south_africa'),
             positive_avg_earning: bool = True,
+            positive_cash_on_hand: bool = True,
             solid_liquidity: bool = True,
-            non_op_expense: bool = True,
             null_data_ratio: float = 0.8,
     ):
         ticker = metrics_report['ticker']
+        if metrics_report['market_cap'] < market_cap:
+            LOG.info(f'filtered {ticker}: Market cap < {market_cap}')
+            return False
         if filtering_country:
             if metrics_report['country'] in filtering_country:
                 LOG.info(f'filtered {ticker}: Filtered country: {metrics_report["country"]}')
@@ -466,19 +527,20 @@ class Picker:
                     check_lt(period_report['average_eps_earnings_per_share_prev_5_9_y'], 0):
                 LOG.info(f'filtered {ticker}: Either avg EPS prev 0-4y or 5-9y < 0')
                 return False
+        if positive_cash_on_hand:
+            if check_lt(period_report['average_cash_on_hand_prev_0_4_y'], 0):
+                LOG.info(f'filtered {ticker}: Negative cash on hand')
         if solid_liquidity:
-            if check_lt(metrics_report['average_current_assets_liabilities_ratio_prev_0_4_y'], 1):
-                LOG.info(f'filtered {ticker}: Avg. current assets/liabilities last 5 years< 1')
+            if check_lt(metrics_report['latest_current_assets_liabilities_ratio'], 1) or \
+                    check_lt(metrics_report['average_current_assets_liabilities_ratio_prev_0_4_y'], 1):
+                LOG.info(f'filtered {ticker}: Latest or avg. current assets/liabilities last 5 years < 1')
                 return False
-            if check_lt(metrics_report['average_total_assets_liabilities_ratio_prev_0_4_y'], 1):
-                LOG.info(f'filtered {ticker}: Avg. total assets/liabilities  last 5 years < 1')
+            if check_lt(metrics_report['latest_total_assets_liabilities_ratio'], 1) or \
+                    check_lt(metrics_report['average_total_assets_liabilities_ratio_prev_0_4_y'], 1):
+                LOG.info(f'filtered {ticker}: Latest or avg. total assets/liabilities  last 5 years < 1')
                 return False
             if check_lt(metrics_report['latest_p_bv'], 0) or check_lt(metrics_report['average_p_bv_prev_0_4_y'], 0):
                 LOG.info(f'filtered {ticker}: Negative book value')
-                return False
-        if non_op_expense:
-            if check_lt(metrics_report['average_non_op_income_expense_per_net_income_ratio_prev_0_4_y'], -1):
-                LOG.info(f'filtered {ticker}: Avg. non op expense last 5 years < -1')
                 return False
         if len([val for val in metrics_report.values()
                 if not val or (not isinstance(val, str) and np.isnan(val))])/len(metrics_report) > null_data_ratio:
@@ -496,16 +558,27 @@ class Picker:
         :return:
         """
         ticker = metrics_report['ticker']
-        for field in ('op_expenses_ratio_prev_0_4_y', 'average_pe_prev_0_4_y'):
-            if check_lt(group_avg[field] + group_std[field], metrics_report[field]):
-                LOG.info(f'filtered {ticker}: {field} > group avg + std')
+        for field in (
+            'average_current_assets_liabilities_ratio_prev_0_4_y', 'average_total_assets_liabilities_ratio_prev_0_4_y',
+            'eps_growth_prev_0_4_vs_5_9_y', 'average_net_income_margin_prev_0_4_y',
+            'average_gross_profit_margin_prev_0_4_y', 'average_ROA_prev_0_4_y', 'average_ROE_prev_0_4_y',
+            'net_cash_flow_per_market_cap', 'average_cash_ratio_prev_0_4_y'
+        ):
+            if check_lt(metrics_report[field], group_avg[field] - 0.675 * group_std[field]):
+                LOG.info(f'filtered {ticker}: {field}: {metrics_report[field]} '
+                         f'< group avg - std: {group_avg[field] - 0.675 * group_std[field]}')
                 return False
-        for field in ('eps_growth_prev_0_4_vs_5_9_y', 'average_operating_income_margin_prev_0_4_y',
-                      'average_return_on_equity_prev_0_4_y', 'average_p_net_cash_flow_prev_0_4_y',
-                      'average_dividend_net_income_ratio_prev_0_4_y'):
-            if check_lt(metrics_report[field], group_avg[field] - group_std[field]):
-                LOG.info(f'filtered {ticker}: {field} < group avg - std')
+        for field in (
+            'average_op_expenses_margin_prev_0_4_y', 'average_non_op_per_op_expense_prev_0_4_y',
+            'average_pe_prev_0_4_y', 'average_p_cash_prev_0_4_y', 'average_p_bv_prev_0_4_y',
+            'average_dividend_net_income_ratio_prev_0_4_y', 'average_debt_issuance_per_net_income_prev_0_4_y',
+            'average_equity_issued_per_net_income_prev_0_4_y', 'average_inventory_current_assets_ratio_prev_0_4_y'
+        ):
+            if check_lt(group_avg[field] + 0.675 * group_std[field], metrics_report[field]):
+                LOG.info(f'filtered {ticker}: {field}: {metrics_report[field]} '
+                         f'> group avg + std: {group_avg[field] + 0.675 * group_std[field]}')
                 return False
+
         return True
 
     @staticmethod
@@ -517,13 +590,14 @@ class Picker:
         :return:
         """
         warnings = []
-        for field in ('revenue_last_5y', 'eps_last_5y', 'acc_receivable_last_5y', 'op_income_margin_last_5y'):
-            if check_lte(period_reports[f'corr_coef_{field}'], -0.71):
-                warnings.append(f'strong downward trend of {field}')
         for field in (
-                'shares_outstanding_last_5y', 'debt_issuance_last_5y', 'equity_issued_last_5y', 'debt_equity_last_5y'):
-            if check_lte(0.71, period_reports[f'corr_coef_{field}']):
-                warnings.append(f'strong upward trend of {field}')
+                'revenue', 'eps', 'acc_receivable', 'net_income_margin', 'gross_profit_margin',
+                'current_assets_liabilities', 'total_assets_liabilities'):
+            if check_lte(period_reports[f'corr_coef_{field}_last_5y'], -0.71):
+                warnings.append(f'strong downward trend of {field} in last 5yrs')
+        for field in ('op_expenses_margin', 'shares_outstanding', 'debt_issuance', 'equity_issued'):
+            if check_lte(0.71, period_reports[f'corr_coef_{field}_last_5y']):
+                warnings.append(f'strong upward trend of {field} in last 5yrs')
         metrics_report['warnings'] = '; '.join(warnings)
         return metrics_report
 
@@ -544,26 +618,28 @@ class Picker:
         fields_name = list(reports[0].keys())
         avg_rep = {'ticker': 'average'}
         for field in fields_name:
-            if field != 'ticker':
+            if field not in ['ticker', 'country', 'industry']:
                 try:
                     avg_rep[field] = apply_f_excl_none(np.average, [rep[field] for rep in reports])
                 except Exception as e:
                     LOG.exception(f'fail to find average of `{field}`: {e}')
                     avg_rep[field] = None
+        LOG.info(f'average_report: {avg_rep}')
         return avg_rep
 
     @staticmethod
     def create_group_std_report(reports: List[Dict]) -> Dict:
         fields_name = list(reports[0].keys())
-        avg_rep = {'ticker': 'std'}
+        std_rep = {'ticker': 'std'}
         for field in fields_name:
             if field != 'ticker':
                 try:
-                    avg_rep[field] = apply_f_excl_none(np.std, [rep[field] for rep in reports])
+                    std_rep[field] = apply_f_excl_none(np.std, [rep[field] for rep in reports])
                 except Exception as e:
                     LOG.exception(f'fail to find std of `{field}`: {e}')
-                    avg_rep[field] = None
-        return avg_rep
+                    std_rep[field] = None
+        LOG.info(f'std_report: {std_rep}')
+        return std_rep
 
     def create_reports_from_multiple_tickers(
             self,
