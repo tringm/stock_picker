@@ -104,6 +104,7 @@ class Picker:
                 },
                 'gross_profit': None,
                 'operating_income': None,
+                'pre_tax_income': None,
                 'net_income': None,
                 'total_non_operating_income_expense': None,
                 'research_and_development_expenses': None,
@@ -196,7 +197,7 @@ class Picker:
             if req_field not in stock_data:
                 raise ValueError(f'{req_field} not in {stock_ticker} data')
             req_field_data = stock_data[req_field]
-            if len(req_field_data['years']) < 5:
+            if len(req_field_data['years']) < 10:
                 raise ValueError(f'{req_field} has less than 5 data points')
             try:
                 ordered_fields = ('years',) + tuple(field for field in req_field_data if field != 'years')
@@ -273,6 +274,11 @@ class Picker:
         metrics_rep['average_net_income_margin_prev_0_4_y'] = div(
             period_rep['average_net_income_prev_0_4_y'], period_rep['average_revenue_prev_0_4_y']
         )
+        period_rep['corr_coef_pre_tax_net_income_margin_last_5y'] = flipped_linear_corrcoef(
+            [div(inc, i_s_data['revenue'][idx]) for idx, inc in enumerate(i_s_data['pre_tax_income'])], 5)
+        metrics_rep['average_pre_tax_net_income_margin_prev_0_4_y'] = div(
+            period_rep['average_pre_tax_income_prev_0_4_y'], period_rep['average_revenue_prev_0_4_y']
+        )
         metrics_rep['eps_growth_prev_0_4_vs_5_9_y'] = change_rate(
             period_rep['average_eps_earnings_per_share_prev_0_4_y'],
             period_rep['average_eps_earnings_per_share_prev_5_9_y'])
@@ -309,10 +315,6 @@ class Picker:
             'latest_current_assets_liabilities_ratio': div(
                 b_s_data['total_current_assets'][0], b_s_data['total_current_liabilities'][0]
             ),
-            'average_inventory_current_assets_ratio_prev_0_4_y': div(
-                period_rep['average_inventory_prev_0_4_y'],
-                period_rep['average_total_current_assets_prev_0_4_y']
-            ),
             'average_current_assets_liabilities_ratio_prev_0_4_y': div(
                 period_rep['average_total_current_assets_prev_0_4_y'],
                 period_rep['average_total_current_liabilities_prev_0_4_y']
@@ -330,9 +332,13 @@ class Picker:
             'average_total_assets_liabilities_ratio_prev_5_9_y': div(
                 period_rep['average_total_assets_prev_5_9_y'], period_rep['average_total_liabilities_prev_5_9_y']
             ),
-            'average_cash_ratio_prev_0_4_y': div(
+            'average_cash_total_liabilities_prev_0_4_y': div(
                 period_rep['average_cash_on_hand_prev_0_4_y'],
                 period_rep['average_total_current_liabilities_prev_0_4_y']
+            ),
+            'average_inventory_current_assets_ratio_prev_0_4_y': div(
+                period_rep['average_inventory_prev_0_4_y'],
+                period_rep['average_total_current_assets_prev_0_4_y']
             )
         })
         period_rep['corr_coef_current_assets_liabilities_last_5y'] = flipped_linear_corrcoef([
@@ -352,8 +358,6 @@ class Picker:
         :return: (report by periods, metrics report)
         """
         period_rep = self.create_report_by_period(c_f_data, self.report_by_period_schema['cash_flow_statement'])
-        period_rep['corr_coef_acc_receivable_last_5y'] = flipped_linear_corrcoef(
-            c_f_data['change_in_accounts_receivable'], 5)
         period_rep['corr_coef_debt_issuance_last_5y'] = flipped_linear_corrcoef(
             c_f_data['debt_issuance_retirement_net_total'], 5)
         period_rep['corr_coef_equity_issued_last_5y'] = flipped_linear_corrcoef(
@@ -455,8 +459,22 @@ class Picker:
         price_metrics_rep['average_ROA_prev_0_4_y'] = div(
             i_s_period_rep['average_net_income_prev_0_4_y'], b_s_period_rep['average_total_assets_prev_0_4_y']
         )
+        price_period_rep['corr_coef_ROA_last_5y'] = flipped_linear_corrcoef([
+            div(i_s_data['net_income'][idx], assets) for idx, assets in enumerate(b_s_data['total_assets'])], 5
+        )
         price_metrics_rep['average_ROE_prev_0_4_y'] = div(
             i_s_period_rep['average_net_income_prev_0_4_y'], b_s_period_rep['average_share_holder_equity_prev_0_4_y']
+        )
+        price_period_rep['corr_coef_ROE_last_5y'] = flipped_linear_corrcoef([
+            div(i_s_data['net_income'][idx], s_e) for idx, s_e in enumerate(b_s_data['share_holder_equity'])], 5
+        )
+        price_metrics_rep['average_ROEC_prev_0_4_y'] = div(
+            i_s_period_rep['average_net_income_prev_0_4_y'],
+            sub(b_s_period_rep['average_total_assets_prev_0_4_y'], b_s_period_rep['average_total_liabilities_prev_0_4_y'])
+        )
+        price_period_rep['corr_coef_ROEC_last_5y'] = flipped_linear_corrcoef([
+            div(n_i, sub(b_s_data['total_assets'][idx], b_s_data['total_liabilities'][idx]))
+            for idx, n_i in enumerate(i_s_data['net_income'])], 5
         )
         price_metrics_rep['latest_dividend_per_share'] = div(
             reverse_sign(c_f_data['total_common_and_preferred_stock_dividends_paid'][0]),
@@ -486,8 +504,33 @@ class Picker:
             price_data, i_s_data, b_s_data, c_f_data, i_s_period_rep, b_s_period_rep, c_f_period_rep)
 
         other_metrics = OrderedDict({
-            'net_cash_flow_per_market_cap': div(
+            'average_net_cash_flow_per_market_cap_prev_0_4_y': div(
                 price_metrics_rep['average_net_cash_flow_per_share_prev_0_4_y'], stock_data['market_cap']
+            ),
+            'average_solvency_ratio_prev_0_4_y': div(
+                sub(
+                    i_s_period_rep['average_net_income_prev_0_4_y'],
+                    i_s_period_rep['average_total_non_operating_income_expense_prev_0_4_y']
+                ),
+                b_s_period_rep['average_total_liabilities_prev_0_4_y']
+            ),
+
+            'average_cash_flow_margin_prev_0_4_y': div(
+                c_f_period_rep['average_cash_flow_from_operating_activities_prev_0_4_y'],
+                i_s_period_rep['average_revenue_prev_0_4_y']
+            )
+        })
+
+        other_period_metrics = OrderedDict({
+            'corr_coef_solvency_ratio_last_5y': flipped_linear_corrcoef(
+                [div(sub(i_s_data['net_income'][idx], i_s_data['total_non_operating_income_expense'][idx]), t_l)
+                 for idx, t_l in enumerate(b_s_data['total_liabilities'])],
+                5
+            ),
+            'corr_coef_cash_flow_margin_last_5y': flipped_linear_corrcoef(
+                [div(c_f, i_s_data['revenue'][idx])
+                 for idx, c_f in enumerate(c_f_data['cash_flow_from_operating_activities'])],
+                5
             )
         })
 
@@ -498,7 +541,8 @@ class Picker:
             'industry': stock_data['industry']
         }, **i_s_metrics_rep, **b_s_metrics_rep, **c_f_metrics_rep, **other_metrics, **price_metrics_rep)
         period_rep = OrderedDict(
-            **{'ticker': stock_ticker}, **i_s_period_rep, **b_s_period_rep, **c_f_period_rep, **price_period_rep)
+            **{'ticker': stock_ticker}, **i_s_period_rep, **b_s_period_rep, **c_f_period_rep, **price_period_rep,
+            **other_period_metrics)
         return period_rep, metrics_rep
 
     @staticmethod
@@ -507,8 +551,10 @@ class Picker:
             metrics_report: Dict,
             market_cap: int = 100,
             filtering_country: Iterable[str] = (
-                    'argentina', 'australia', 'bermuda', 'brazil', 'chile', 'china', 'columbia',
-                    'hong_kong_sar_china', 'india', 'indonesia', 'israel', 'japan', 'mexico', 'russia', 'south_africa'),
+                'argentina', 'australia', 'bermuda', 'brazil', 'chile', 'china', 'columbia',
+                'hong_kong_sar_china', 'india', 'indonesia', 'israel', 'japan', 'mexico', 'russia', 'south_africa',
+                'hong_kong, _sar_china'
+            ),
             positive_avg_earning: bool = True,
             positive_cash_on_hand: bool = True,
             solid_liquidity: bool = True,
@@ -559,10 +605,14 @@ class Picker:
         """
         ticker = metrics_report['ticker']
         for field in (
+            'eps_growth_prev_0_4_vs_5_9_y',
             'average_current_assets_liabilities_ratio_prev_0_4_y', 'average_total_assets_liabilities_ratio_prev_0_4_y',
-            'eps_growth_prev_0_4_vs_5_9_y', 'average_net_income_margin_prev_0_4_y',
-            'average_gross_profit_margin_prev_0_4_y', 'average_ROA_prev_0_4_y', 'average_ROE_prev_0_4_y',
-            'net_cash_flow_per_market_cap', 'average_cash_ratio_prev_0_4_y'
+            'average_cash_total_liabilities_prev_0_4_y', 'average_solvency_ratio_prev_0_4_y',
+            'average_gross_profit_margin_prev_0_4_y', 'average_net_income_margin_prev_0_4_y',
+            'average_pre_tax_net_income_margin_prev_0_4_y',
+            'average_ROA_prev_0_4_y', 'average_ROE_prev_0_4_y', 'average_ROEC_prev_0_4_y',
+            'average_cash_flow_margin_prev_0_4_y', 'average_net_cash_flow_per_market_cap_prev_0_4_y',
+
         ):
             if check_lt(metrics_report[field], group_avg[field] - 0.675 * group_std[field]):
                 LOG.info(f'filtered {ticker}: {field}: {metrics_report[field]} '
@@ -591,8 +641,11 @@ class Picker:
         """
         warnings = []
         for field in (
-                'revenue', 'eps', 'acc_receivable', 'net_income_margin', 'gross_profit_margin',
-                'current_assets_liabilities', 'total_assets_liabilities'):
+            'revenue', 'eps',
+            'current_assets_liabilities', 'total_assets_liabilities', 'solvency_ratio',
+            'net_income_margin', 'gross_profit_margin', 'pre_tax_net_income_margin', 'cash_flow_margin',
+            'ROA', 'ROE', 'ROEC'
+        ):
             if check_lte(period_reports[f'corr_coef_{field}_last_5y'], -0.71):
                 warnings.append(f'strong downward trend of {field} in last 5yrs')
         for field in ('op_expenses_margin', 'shares_outstanding', 'debt_issuance', 'equity_issued'):
